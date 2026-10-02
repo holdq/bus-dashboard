@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>客廳專屬資訊看板</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background-color: #0d0d0d;
+            color: #ffffff;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            padding: 24px;
+            justify-content: space-between;
+            user-select: none;
+        }
+
+        /* 1. 頂部區域：時鐘與天氣 */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            border-bottom: 1px solid #222222;
+            padding-bottom: 20px;
+        }
+        .clock-container .time {
+            font-size: 5rem;
+            font-weight: 700;
+            line-height: 1;
+            letter-spacing: -1px;
+            color: #ffffff;
+            font-variant-numeric: tabular-nums;
+        }
+        .clock-container .date {
+            font-size: 1.4rem;
+            color: #888888;
+            margin-top: 10px;
+        }
+        .weather-container {
+            text-align: right;
+        }
+        .weather-container .temp {
+            font-size: 3.5rem;
+            font-weight: 600;
+            color: #ffb703;
+            line-height: 1;
+        }
+        .weather-container .desc {
+            font-size: 1.2rem;
+            color: #aaaaaa;
+            margin-top: 8px;
+        }
+
+        /* 2. 中間區域：巴士到站時間板 */
+        .eta-container {
+            flex-grow: 1;
+            margin-top: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+        .stop-title {
+            font-size: 1.2rem;
+            color: #00b4d8;
+            font-weight: 600;
+            letter-spacing: 1px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .eta-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .eta-card {
+            background: #161616;
+            border-radius: 12px;
+            padding: 18px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border: 1px solid #262626;
+        }
+        .route-info {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+        .route-no {
+            font-size: 2.5rem;
+            font-weight: 800;
+            color: #e63946;
+            min-width: 100px;
+        }
+        .dest {
+            font-size: 1.4rem;
+            color: #dddddd;
+        }
+        .eta-times {
+            display: flex;
+            gap: 12px;
+        }
+        .badge {
+            background: #252525;
+            padding: 10px 16px;
+            border-radius: 8px;
+            font-size: 1.4rem;
+            font-weight: 700;
+            color: #00f5d4;
+            font-variant-numeric: tabular-nums;
+        }
+        .badge.now {
+            background: #e63946;
+            color: #ffffff;
+            animation: blink 1.5s infinite;
+        }
+
+        @keyframes blink {
+            0% { opacity: 1; }
+            50% { opacity: 0.4; }
+            100% { opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 時鐘與天氣 -->
+    <div class="header">
+        <div class="clock-container">
+            <div class="time" id="clock">00:00:00</div>
+            <div class="date" id="date">----年--月--日</div>
+        </div>
+        <div class="weather-container">
+            <div class="temp" id="temp">--°C</div>
+            <div class="desc" id="weather-desc">載入天氣中...</div>
+        </div>
+    </div>
+
+    <!-- 巴士到站顯示區 -->
+    <div class="eta-container">
+        <div class="stop-title">📍 樓下巴士站即時到站 (KMB API)</div>
+        <div class="eta-list" id="eta-list">
+            <!-- 數據會由 JavaScript 動態載入 -->
+        </div>
+    </div>
+
+    <script>
+        // ----------------------------------------------------
+        // 設定區：請依需求修改巴士站 Stop ID 與路線號碼
+        // ----------------------------------------------------
+        const TARGET_STOP_ID = '9A412252B10AD2FF'; // 替換為你的 Stop ID
+        const TARGET_ROUTES = ['35A', '32', '36B']; // 欲顯示的路線號碼
+        const DIRECTION = 'O'; // 'O' 代表去程 (Outbound)，'I' 代表回程 (Inbound)
+
+        // 1. 實時時鐘 (包含秒數)
+        function updateClock() {
+            const now = new Date();
+            const hrs = String(now.getHours()).padStart(2, '0');
+            const mins = String(now.getMinutes()).padStart(2, '0');
+            const secs = String(now.getSeconds()).padStart(2, '0');
+            
+            document.getElementById('clock').textContent = `${hrs}:${mins}:${secs}`;
+
+            const options = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' };
+            document.getElementById('date').textContent = now.toLocaleDateString('zh-HK', options);
+        }
+        setInterval(updateClock, 1000);
+        updateClock();
+
+        // 2. 取得香港天文台即時天氣
+        async function fetchWeather() {
+            try {
+                const res = await fetch('https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=rhrread&lang=tc');
+                const data = await res.json();
+                const temp = data.temperature.data[0].value;
+                document.getElementById('temp').textContent = `${temp}°C`;
+                
+                // 判斷降雨狀態
+                const rainfall = data.rainfall.data[0].max;
+                document.getElementById('weather-desc').textContent = rainfall > 0 ? '有雨' : '天晴 / 多雲';
+            } catch (e) {
+                console.error('Weather Fetch Error:', e);
+            }
+        }
+        setInterval(fetchWeather, 600000); // 10 分鐘更新一次天氣
+        fetchWeather();
+
+        // 3. 取得九巴即時到站時間 (高精準度演算)
+        async function fetchBusETA() {
+            try {
+                const res = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/stop-eta/${TARGET_STOP_ID}`);
+                const data = await res.json();
+                
+                // 初始化資料結構
+                const etaMap = {};
+                TARGET_ROUTES.forEach(r => etaMap[r] = { dest: '', times: [] });
+
+                const now = new Date();
+
+                data.data.forEach(item => {
+                    if (TARGET_ROUTES.includes(item.route) && item.dir === DIRECTION) {
+                        etaMap[item.route].dest = item.dest_tc;
+
+                        if (item.eta) {
+                            const etaTime = new Date(item.eta);
+                            const diffSecs = Math.floor((etaTime - now) / 1000);
+
+                            // 允許 -30 秒寬限期（避免公車剛到站就立刻在畫面上消失）
+                            if (diffSecs >= -30) {
+                                const diffMins = Math.max(0, Math.floor(diffSecs / 60));
+                                etaMap[item.route].times.push(diffMins);
+                            }
+                        }
+                    }
+                });
+
+                // 渲染至畫面
+                const container = document.getElementById('eta-list');
+                container.innerHTML = '';
+
+                TARGET_ROUTES.forEach(route => {
+                    const info = etaMap[route];
+                    // 排序並取前兩班
+                    const sortedTimes = info.times.sort((a, b) => a - b).slice(0, 2);
+                    
+                    let timeBadges = sortedTimes.map(m => {
+                        if (m <= 0) return `<span class="badge now">即將到站</span>`;
+                        return `<span class="badge">${m} 分鐘</span>`;
+                    }).join('');
+
+                    if (sortedTimes.length === 0) {
+                        timeBadges = `<span class="badge" style="color:#666; background:#1a1a1a;">暫無班次</span>`;
+                    }
+
+                    const card = `
+                        <div class="eta-card">
+                            <div class="route-info">
+                                <div class="route-no">${route}</div>
+                                <div class="dest">往 ${info.dest || '--'}</div>
+                            </div>
+                            <div class="eta-times">${timeBadges}</div>
+                        </div>
+                    `;
+                    container.innerHTML += card;
+                });
+
+            } catch (e) {
+                console.error('Bus ETA Fetch Error:', e);
+            }
+        }
+
+        // 設定每 20 秒抓取一次 API（與主流交通 App 同步）
+        setInterval(fetchBusETA, 20000);
+        fetchBusETA();
+    </script>
+</body>
+</html>
